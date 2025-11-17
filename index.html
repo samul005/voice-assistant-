@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vyra Web Assistant</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Title -->
+        <header>
+            <h1>Vyra Web Assistant</h1>
+            <div class="header-controls">
+                <button class="icon-button" id="settingsButton" title="Settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+                    </svg>
+                </button>
+                <button class="icon-button" id="historyButton" title="Chat History">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Vyra Avatar -->
+        <div class="avatar-container">
+            <div class="avatar" id="avatar">
+                <div class="avatar-glow"></div>
+                <div class="avatar-core"></div>
+                <div class="sound-wave">
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Text Display -->
+        <div class="response-container">
+            <p id="responseText">Hi! Tap the microphone to speak to me.</p>
+        </div>
+
+        <!-- Microphone Button -->
+        <div class="mic-container">
+            <button class="mic-button" id="micButton">
+                <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </button>
+            <p class="mic-status" id="micStatus">Tap to speak</p>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="panel" id="settingsPanel">
+        <div class="panel-content">
+            <div class="panel-header">
+                <h2>Settings</h2>
+                <button class="close-button" id="closeSettings">×</button>
+            </div>
+            <div class="panel-body">
+                <div class="setting-item">
+                    <label class="setting-label">
+                        <input type="checkbox" id="aiToggle">
+                        <span>Enable AI Mode (Requires Backend)</span>
+                    </label>
+                    <p class="setting-description">Use Gemini AI for smarter responses</p>
+                </div>
+                <div class="setting-item">
+                    <label class="setting-label">
+                        <span>Backend Status:</span>
+                    </label>
+                    <p class="status-indicator" id="backendStatus">Checking...</p>
+                </div>
+                <div class="setting-item">
+                    <label class="setting-label">
+                        <span>Voice Speed:</span>
+                    </label>
+                    <input type="range" id="voiceSpeed" min="0.5" max="2" step="0.1" value="1">
+                    <span id="voiceSpeedValue">1.0x</span>
+                </div>
+                <div class="setting-item">
+                    <button class="action-button" id="clearHistoryButton">Clear Chat History</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Panel -->
+    <div class="panel" id="historyPanel">
+        <div class="panel-content">
+            <div class="panel-header">
+                <h2>Chat History</h2>
+                <button class="close-button" id="closeHistory">×</button>
+            </div>
+            <div class="panel-body">
+                <div id="historyList" class="history-list">
+                    <p class="empty-state">No chat history yet. Start talking to Vyra!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
