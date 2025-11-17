@@ -9,6 +9,7 @@ const settingsPanel = document.getElementById('settingsPanel');
 const historyPanel = document.getElementById('historyPanel');
 const closeSettings = document.getElementById('closeSettings');
 const closeHistory = document.getElementById('closeHistory');
+const wakeWordToggle = document.getElementById('wakeWordToggle');
 const aiToggle = document.getElementById('aiToggle');
 const backendStatus = document.getElementById('backendStatus');
 const voiceSpeed = document.getElementById('voiceSpeed');
@@ -25,11 +26,18 @@ let isListening = false;
 const synth = window.speechSynthesis;
 
 // Backend Configuration
-const BACKEND_URL = 'http://localhost:5000';
+// Update this URL when you deploy backend to Render/Railway/Heroku
+const BACKEND_URL = 'https://voice-assistant-backend.onrender.com'; // Change to your deployed backend URL
+const FALLBACK_BACKEND_URL = 'http://localhost:5000';
 let useBackend = false;
 let sessionId = generateSessionId();
 let localHistory = [];
 let currentVoiceSpeed = 1.0;
+
+// Wake word detection
+let wakeWordEnabled = false;
+let isListeningForWakeWord = false;
+let wakeWordRecognition = null;
 
 // Initialize Speech Recognition if available
 if (SpeechRecognition) {
@@ -37,6 +45,12 @@ if (SpeechRecognition) {
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = 'en-US';
+
+    // Initialize wake word recognition
+    wakeWordRecognition = new SpeechRecognition();
+    wakeWordRecognition.continuous = true;
+    wakeWordRecognition.interimResults = true;
+    wakeWordRecognition.lang = 'en-US';
 
     recognition.onstart = () => {
         isListening = true;
@@ -60,9 +74,57 @@ if (SpeechRecognition) {
     recognition.onend = () => {
         isListening = false;
         micButton.classList.remove('active');
-        micStatus.textContent = 'Tap to speak';
+        micStatus.textContent = wakeWordEnabled ? 'Say "Hey Vyra"' : 'Tap to speak';
         if (avatar.classList.contains('listening')) {
             setAvatarState('idle');
+        }
+        
+        // Restart wake word listening if enabled
+        if (wakeWordEnabled && !isListeningForWakeWord) {
+            startWakeWordListening();
+        }
+    };
+
+    // Wake word recognition handlers
+    wakeWordRecognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript.toLowerCase().trim();
+            console.log('Wake word listening:', transcript);
+            
+            if (transcript.includes('hey vyra') || transcript.includes('hi vyra') || 
+                transcript.includes('hey vira') || transcript.includes('hi vira')) {
+                console.log('Wake word detected!');
+                stopWakeWordListening();
+                speak('Yes?');
+                setTimeout(() => {
+                    try {
+                        recognition.start();
+                    } catch (error) {
+                        console.error('Error starting recognition after wake word:', error);
+                        startWakeWordListening();
+                    }
+                }, 1500);
+                break;
+            }
+        }
+    };
+
+    wakeWordRecognition.onerror = (event) => {
+        console.error('Wake word recognition error:', event.error);
+        if (wakeWordEnabled && event.error !== 'aborted') {
+            setTimeout(() => {
+                if (wakeWordEnabled && !isListening) {
+                    startWakeWordListening();
+                }
+            }, 1000);
+        }
+    };
+
+    wakeWordRecognition.onend = () => {
+        if (wakeWordEnabled && !isListening) {
+            setTimeout(() => {
+                startWakeWordListening();
+            }, 100);
         }
     };
 }
@@ -72,6 +134,11 @@ micButton.addEventListener('click', async () => {
     if (!recognition) {
         responseText.textContent = 'Sorry, speech recognition is not supported in your browser. Please use Chrome or Edge.';
         return;
+    }
+
+    // If wake word is active, stop it temporarily
+    if (wakeWordEnabled && isListeningForWakeWord) {
+        stopWakeWordListening();
     }
 
     // Request microphone permission first
@@ -121,8 +188,9 @@ async function processCommand(command) {
     
     // Try backend first if enabled
     if (useBackend) {
+        let response = null;
         try {
-            const response = await fetch(`${BACKEND_URL}/api/process-command`, {
+            response = await fetch(`${BACKEND_URL}/api/process-command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -131,8 +199,25 @@ async function processCommand(command) {
                     use_ai: aiToggle.checked
                 })
             });
+        } catch (error) {
+            // Try fallback URL
+            try {
+                response = await fetch(`${FALLBACK_BACKEND_URL}/api/process-command`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        command: command,
+                        session_id: sessionId,
+                        use_ai: aiToggle.checked
+                    })
+                });
+            } catch (fallbackError) {
+                console.error('Both backend URLs failed:', error, fallbackError);
+            }
+        }
 
-            if (response.ok) {
+        if (response && response.ok) {
+            try {
                 const data = await response.json();
                 addToHistory(command, data.response);
                 displayResponse(data.response);
@@ -152,9 +237,9 @@ async function processCommand(command) {
                 
                 speak(data.response, action);
                 return;
+            } catch (parseError) {
+                console.error('Error parsing backend response:', parseError);
             }
-        } catch (error) {
-            console.error('Backend error, falling back to local:', error);
         }
     }
 
@@ -364,6 +449,44 @@ closeHistory.addEventListener('click', () => {
     historyPanel.classList.remove('active');
 });
 
+// Wake Word Toggle
+wakeWordToggle.addEventListener('change', async (e) => {
+    wakeWordEnabled = e.target.checked;
+    localStorage.setItem('vyra_wake_word', wakeWordEnabled);
+    
+    if (wakeWordEnabled) {
+        // Request microphone permission first
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const audioInputs = devices.filter(device => device.kind === 'audioinput');
+            
+            if (audioInputs.length === 0) {
+                displayResponse('No microphone detected for wake word.');
+                wakeWordToggle.checked = false;
+                wakeWordEnabled = false;
+                return;
+            }
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+            
+            startWakeWordListening();
+            displayResponse('Wake word enabled. Say \"Hey Vyra\" to activate!');
+            speak('Wake word enabled. Just say Hey Vyra to activate me.');
+        } catch (error) {
+            console.error('Wake word permission error:', error);
+            wakeWordToggle.checked = false;
+            wakeWordEnabled = false;
+            displayResponse('Microphone access needed for wake word feature.');
+        }
+    } else {
+        stopWakeWordListening();
+        setAvatarState('idle');
+        micStatus.textContent = 'Tap to speak';
+        displayResponse('Wake word disabled. Tap the microphone to speak.');
+    }
+});
+
 // AI Toggle
 aiToggle.addEventListener('change', (e) => {
     useBackend = e.target.checked;
@@ -405,6 +528,34 @@ function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+// Wake word functions
+function startWakeWordListening() {
+    if (!wakeWordRecognition || isListening) return;
+    
+    try {
+        isListeningForWakeWord = true;
+        wakeWordRecognition.start();
+        micStatus.textContent = 'Say "Hey Vyra"';
+        setAvatarState('listening');
+        console.log('Wake word listening started');
+    } catch (error) {
+        console.error('Error starting wake word listening:', error);
+        isListeningForWakeWord = false;
+    }
+}
+
+function stopWakeWordListening() {
+    if (!wakeWordRecognition) return;
+    
+    try {
+        isListeningForWakeWord = false;
+        wakeWordRecognition.stop();
+        console.log('Wake word listening stopped');
+    } catch (error) {
+        console.error('Error stopping wake word listening:', error);
+    }
+}
+
 // Check Backend Health
 async function checkBackendHealth() {
     try {
@@ -416,10 +567,21 @@ async function checkBackendHealth() {
             return true;
         }
     } catch (error) {
-        backendStatus.textContent = 'Offline';
-        backendStatus.className = 'status-indicator offline';
-        aiToggle.checked = false;
-        useBackend = false;
+        // Try fallback URL
+        try {
+            const fallbackResponse = await fetch(`${FALLBACK_BACKEND_URL}/api/health`);
+            if (fallbackResponse.ok) {
+                const data = await fallbackResponse.json();
+                backendStatus.textContent = 'Online (Local) - ' + (data.ai_enabled ? 'AI Enabled' : 'AI Disabled');
+                backendStatus.className = 'status-indicator online';
+                return true;
+            }
+        } catch (fallbackError) {
+            backendStatus.textContent = 'Offline';
+            backendStatus.className = 'status-indicator offline';
+            aiToggle.checked = false;
+            useBackend = false;
+        }
     }
     return false;
 }
@@ -456,8 +618,15 @@ function addToHistory(userText, vyraResponse) {
 
 // Load Settings
 function loadSettings() {
+    const savedWakeWord = localStorage.getItem('vyra_wake_word');
     const savedAiMode = localStorage.getItem('vyra_use_ai');
     const savedVoiceSpeed = localStorage.getItem('vyra_voice_speed');
+    
+    if (savedWakeWord === 'true') {
+        wakeWordToggle.checked = true;
+        wakeWordEnabled = true;
+        // Will start after mic permission check
+    }
     
     if (savedAiMode === 'true') {
         aiToggle.checked = true;
